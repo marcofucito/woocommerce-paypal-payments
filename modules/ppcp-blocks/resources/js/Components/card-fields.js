@@ -19,6 +19,115 @@ import {
 import { cartHasSubscriptionProducts } from '../Helper/Subscription';
 import { __ } from '@wordpress/i18n';
 
+const CHECKOUT_SELECTOR =
+	'.wp-block-woocommerce-checkout, .wc-block-checkout';
+const INVALID_CHECKOUT_FIELD_SELECTOR = [
+	'.wc-block-components-validation-error',
+	'.wc-block-components-text-input.has-error',
+	'.wc-block-components-combobox.has-error',
+	'.wc-block-components-address-form__address_1.has-error',
+	'[aria-invalid="true"]',
+].join( ',' );
+const REQUIRED_CHECKOUT_FIELD_SELECTOR =
+	'input[required], input[aria-required="true"], select[required], select[aria-required="true"], textarea[required], textarea[aria-required="true"]';
+
+function isVisible( element ) {
+	if ( ! element ) {
+		return false;
+	}
+
+	return Boolean(
+		element.offsetWidth ||
+			element.offsetHeight ||
+			element.getClientRects().length
+	);
+}
+
+function getFocusableElement( element ) {
+	if ( ! element ) {
+		return null;
+	}
+
+	if ( typeof element.focus === 'function' ) {
+		return element;
+	}
+
+	return element.querySelector( 'input, select, textarea, button' );
+}
+
+function focusInvalidCheckoutField( element ) {
+	const target = getFocusableElement(
+		element.closest(
+			'.wc-block-components-text-input, .wc-block-components-combobox'
+		) || element
+	);
+
+	if ( ! target ) {
+		return;
+	}
+
+	target.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+
+	if ( typeof target.focus === 'function' ) {
+		target.focus( { preventScroll: true } );
+	}
+}
+
+function isRequiredFieldInvalid( field ) {
+	if ( ! isVisible( field ) || field.disabled ) {
+		return false;
+	}
+
+	if (
+		field.getAttribute( 'aria-required' ) !== 'true' &&
+		field.required !== true
+	) {
+		return false;
+	}
+
+	if ( typeof field.checkValidity === 'function' ) {
+		return ! field.checkValidity();
+	}
+
+	if ( 'value' in field ) {
+		return String( field.value ).trim() === '';
+	}
+
+	return false;
+}
+
+function hasInvalidRequiredCheckoutFields() {
+	if ( typeof document === 'undefined' ) {
+		return false;
+	}
+
+	const checkout = document.querySelector( CHECKOUT_SELECTOR );
+
+	if ( ! checkout ) {
+		return false;
+	}
+
+	const invalidField = Array.from(
+		checkout.querySelectorAll( INVALID_CHECKOUT_FIELD_SELECTOR )
+	).find( isVisible );
+
+	if ( invalidField ) {
+		focusInvalidCheckoutField( invalidField );
+		return true;
+	}
+
+	const requiredInvalidField = Array.from(
+		checkout.querySelectorAll( REQUIRED_CHECKOUT_FIELD_SELECTOR )
+	).find( isRequiredFieldInvalid );
+
+	if ( requiredInvalidField ) {
+		focusInvalidCheckoutField( requiredInvalidField );
+		return true;
+	}
+
+	return false;
+}
+
 export function CardFields( { config, eventRegistration, emitResponse } ) {
 	const { onPaymentSetup } = eventRegistration;
 	const { responseTypes } = emitResponse;
@@ -47,6 +156,28 @@ export function CardFields( { config, eventRegistration, emitResponse } ) {
 		() =>
 			onPaymentSetup( () => {
 				async function handlePaymentProcessing() {
+					if ( hasInvalidRequiredCheckoutFields() ) {
+						return {
+							type: responseTypes.ERROR,
+							message: __(
+								'Please complete all required checkout fields before continuing with payment.',
+								'woocommerce-paypal-payments'
+							),
+						};
+					}
+
+					if (
+						! cardFieldsForm ||
+						typeof cardFieldsForm.submit !== 'function'
+					) {
+						return {
+							type: responseTypes.ERROR,
+							message:
+								config.scriptData.hosted_fields.labels
+									.fields_not_valid,
+						};
+					}
+
 					try {
 						await cardFieldsForm.submit();
 					} catch ( error ) {
