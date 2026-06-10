@@ -43,34 +43,6 @@ function isVisible( element ) {
 	);
 }
 
-function getFocusableElement( element ) {
-	if ( ! element ) {
-		return null;
-	}
-
-	if ( typeof element.focus === 'function' ) {
-		return element;
-	}
-
-	return element.querySelector( 'input, select, textarea, button' );
-}
-
-function focusInvalidCheckoutField( element ) {
-	const target = getFocusableElement(
-		element.closest(
-			'.wc-block-components-text-input, .wc-block-components-combobox'
-		) || element
-	);
-
-	if ( ! target ) {
-		return;
-	}
-
-	if ( typeof target.focus === 'function' ) {
-		target.focus( { preventScroll: true } );
-	}
-}
-
 function isRequiredFieldInvalid( field ) {
 	if ( ! isVisible( field ) || field.disabled ) {
 		return false;
@@ -105,25 +77,17 @@ function hasInvalidRequiredCheckoutFields() {
 		return false;
 	}
 
-	const invalidField = Array.from(
+	const invalidFieldExists = Array.from(
 		checkout.querySelectorAll( INVALID_CHECKOUT_FIELD_SELECTOR )
-	).find( isVisible );
+	).some( isVisible );
 
-	if ( invalidField ) {
-		focusInvalidCheckoutField( invalidField );
+	if ( invalidFieldExists ) {
 		return true;
 	}
 
-	const requiredInvalidField = Array.from(
+	return Array.from(
 		checkout.querySelectorAll( REQUIRED_CHECKOUT_FIELD_SELECTOR )
-	).find( isRequiredFieldInvalid );
-
-	if ( requiredInvalidField ) {
-		focusInvalidCheckoutField( requiredInvalidField );
-		return true;
-	}
-
-	return false;
+	).some( isRequiredFieldInvalid );
 }
 
 export function CardFields( { config, eventRegistration, emitResponse } ) {
@@ -170,9 +134,10 @@ export function CardFields( { config, eventRegistration, emitResponse } ) {
 					) {
 						return {
 							type: responseTypes.ERROR,
-							message:
-								config.scriptData.hosted_fields.labels
-									.fields_not_valid,
+							message: __(
+								'Payment form is not ready. Please try again.',
+								'woocommerce-paypal-payments'
+							),
 						};
 					}
 
