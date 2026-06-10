@@ -19,79 +19,19 @@ import {
 import { cartHasSubscriptionProducts } from '../Helper/Subscription';
 import { __ } from '@wordpress/i18n';
 
-const CHECKOUT_SELECTOR =
-	'.wp-block-woocommerce-checkout, .wc-block-checkout';
-const INVALID_CHECKOUT_FIELD_SELECTOR = [
-	'.wc-block-components-validation-error',
-	'.wc-block-components-text-input.has-error',
-	'.wc-block-components-combobox.has-error',
-	'.wc-block-components-address-form__address_1.has-error',
-	'[aria-invalid="true"]',
-].join( ',' );
-const REQUIRED_CHECKOUT_FIELD_SELECTOR =
-	'input[required], input[aria-required="true"], select[required], select[aria-required="true"], textarea[required], textarea[aria-required="true"]';
+const CHECKOUT_FIELDS_NOT_VALID_MESSAGE = __(
+	'Please complete all required checkout fields before continuing with payment.',
+	'woocommerce-paypal-payments'
+);
 
-function isVisible( element ) {
-	if ( ! element ) {
-		return false;
-	}
+function hasCheckoutValidationErrors() {
+	const validationStore = wp?.data?.select?.( 'wc/store/validation' );
 
-	return Boolean(
-		element.offsetWidth ||
-			element.offsetHeight ||
-			element.getClientRects().length
-	);
-}
-
-function isRequiredFieldInvalid( field ) {
-	if ( ! isVisible( field ) || field.disabled ) {
-		return false;
-	}
-
-	if (
-		field.getAttribute( 'aria-required' ) !== 'true' &&
-		field.required !== true
-	) {
-		return false;
-	}
-
-	if ( typeof field.checkValidity === 'function' ) {
-		return ! field.checkValidity();
-	}
-
-	if ( 'value' in field ) {
-		return String( field.value ).trim() === '';
-	}
-
-	return false;
-}
-
-function hasInvalidRequiredCheckoutFields() {
-	if ( typeof document === 'undefined' ) {
-		return false;
-	}
-
-	const checkout = document.querySelector( CHECKOUT_SELECTOR );
-
-	if ( ! checkout ) {
-		return false;
-	}
-
-	const invalidFieldExists = Array.from(
-		checkout.querySelectorAll( INVALID_CHECKOUT_FIELD_SELECTOR )
-	).some( isVisible );
-
-	if ( invalidFieldExists ) {
-		return true;
-	}
-
-	return Array.from(
-		checkout.querySelectorAll( REQUIRED_CHECKOUT_FIELD_SELECTOR )
-	).some( isRequiredFieldInvalid );
+	return validationStore?.hasValidationErrors?.() || false;
 }
 
 export function CardFields( { config, eventRegistration, emitResponse } ) {
-	const { onPaymentSetup } = eventRegistration;
+	const { onPaymentSetup, onCheckoutValidation } = eventRegistration;
 	const { responseTypes } = emitResponse;
 
 	const [ cardFieldsForm, setCardFieldsForm ] = useState();
@@ -115,16 +55,36 @@ export function CardFields( { config, eventRegistration, emitResponse } ) {
 	}, [ hasSubscriptionProducts ] );
 
 	useEffect(
+		() => {
+			if ( typeof onCheckoutValidation !== 'function' ) {
+				return undefined;
+			}
+
+			return onCheckoutValidation(
+				() => {
+					if ( hasCheckoutValidationErrors() ) {
+						return {
+							type: responseTypes.ERROR,
+							message: CHECKOUT_FIELDS_NOT_VALID_MESSAGE,
+						};
+					}
+
+					return true;
+				},
+				99
+			);
+		},
+		[ onCheckoutValidation, responseTypes.ERROR ]
+	);
+
+	useEffect(
 		() =>
 			onPaymentSetup( () => {
 				async function handlePaymentProcessing() {
-					if ( hasInvalidRequiredCheckoutFields() ) {
+					if ( hasCheckoutValidationErrors() ) {
 						return {
 							type: responseTypes.ERROR,
-							message: __(
-								'Please complete all required checkout fields before continuing with payment.',
-								'woocommerce-paypal-payments'
-							),
+							message: CHECKOUT_FIELDS_NOT_VALID_MESSAGE,
 						};
 					}
 
