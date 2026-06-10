@@ -66,8 +66,6 @@ function focusInvalidCheckoutField( element ) {
 		return;
 	}
 
-	target.scrollIntoView( { behavior: 'smooth', block: 'center' } );
-
 	if ( typeof target.focus === 'function' ) {
 		target.focus( { preventScroll: true } );
 	}
